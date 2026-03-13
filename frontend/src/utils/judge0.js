@@ -178,39 +178,40 @@ export async function submitToJudge(
     };
   }
 
-  // If backend API exists, forward the submission to it and let it handle Judge0.
-  if (API_BASE) {
-    try {
-      const body = {
-        teamId: options.teamId,
-        kriyaID: options.kriyaID,
-        problemId: problem.id,
-        language: language.toUpperCase(),
-        language_id: languageId,
-        code,
-      };
-
-      const headers = { "Content-Type": "application/json" };
-      if (options.token) headers.Authorization = `Bearer ${options.token}`;
-
-      const res = await fetch(SUBMISSION_ENDPOINT, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.msg || data.message || `Server error ${res.status}`);
-
-      return data.submission || data;
-    } catch (e) {
-      console.warn("Backend submission failed, falling back to simulation:", e.message);
-      // Fall back to simulation when backend fails
-      const latency = Math.random() * 1200 + 800;
-      await delay(latency);
-      return simulateResult(code, testCases);
+    if (API_BASE) {
+      try {
+        const body = {
+          teamId: options.teamId,
+          kriyaID: options.kriyaID,
+          problemId: problem.id,
+          language: language.toUpperCase(),
+          language_id: languageId,
+          code,
+        };
+  
+        const headers = { "Content-Type": "application/json" };
+        if (options.token) headers.Authorization = `Bearer ${options.token}`;
+  
+        const res = await fetch(SUBMISSION_ENDPOINT, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+  
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.msg || data.message || `Server error ${res.status}`);
+  
+        return data.submission || data;
+      } catch (e) {
+        console.error("Backend submission failed:", e.message);
+        return {
+          verdict: "ERROR",
+          passedTestCases: 0,
+          totalTestCases: 0,
+          message: `Backend Error: ${e.message}`,
+        };
+      }
     }
-  }
 
   // Fallback: simulate a Judge0 run locally (for demos without backend)
   const latency = Math.random() * 1200 + 800;

@@ -15,10 +15,17 @@ import "../styles/mapPage.css";
 
 const MapPage = () => {
     const navigate = useNavigate();
+    const [isLoading, setIsLoading] = useState(true);
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [lastSolvedCount, setLastSolvedCount] = useState(() => {
+        const saved = localStorage.getItem('kriya_solved_count');
+        return saved ? parseInt(saved) : 0;
+    });
     const [team, setTeam] = useState(() => {
         const saved = localStorage.getItem("team");
         return saved ? JSON.parse(saved) : null;
     });
+    const [isTeamFetched, setIsTeamFetched] = useState(false);
     const [allAlgoCards, setAllAlgoCards] = useState([]);
     const [selectedCards, setSelectedCards] = useState(() => {
         const saved = localStorage.getItem('kriya_selected_cards');
@@ -26,7 +33,10 @@ const MapPage = () => {
     });
     const [isPopupOpen, setIsPopupOpen] = useState(false);
     const [isActionPopupOpen, setIsActionPopupOpen] = useState(false);
-    const [cardsChosen, setCardsChosen] = useState(false);
+    const [cardsChosen, setCardsChosen] = useState(() => {
+        const saved = localStorage.getItem('kriya_cards_chosen');
+        return saved === 'true';
+    });
 
     // Treasure Hunt State
     const [isTreasureHunting, setIsTreasureHunting] = useState(false);
@@ -62,38 +72,52 @@ const MapPage = () => {
     };
 
     const [activeChallenge, setActiveChallenge] = useState(null);
-    const [r2Questions, setR2Questions] = useState([]);
+    const [r2Questions, setR2Questions] = useState(() => {
+        const saved = localStorage.getItem('kriya_r2_questions');
+        return saved ? JSON.parse(saved) : [];
+    });
     const [isR2SolveOpen, setIsR2SolveOpen] = useState(false);
+
+    // Save questions when they change
+    React.useEffect(() => {
+        if (r2Questions.length > 0) {
+            localStorage.setItem('kriya_r2_questions', JSON.stringify(r2Questions));
+        }
+    }, [r2Questions]);
     const [currentR2Index, setCurrentR2Index] = useState(0);
 
     const { cards: gameCards } = useGame();
 
-    // Filter available cards from intersection of earned (from DB) and assigned (selectedScrolls)
+    // Filter available cards based on those won in Round 1 (selectedScrolls)
     const availableCards = React.useMemo(() => {
         if (!team || !allAlgoCards.length) return [];
         
-        const earnedNames = team.round1?.earnedAlgoCards || [];
-        const assignedNames = team.round1?.selectedScrolls?.map(s => s.name.toLowerCase().replace(/\s+/g, '')) || [];
+        // Get unique names of scrolls won in Round 1
+        const wonScrollNames = team.round1?.selectedScrolls?.map(s => (s.name || '').toLowerCase().replace(/\s+/g, '')) || [];
         
-        return earnedNames
-            .filter(name => assignedNames.includes(name.toLowerCase().replace(/\s+/g, '')))
-            .map(name => {
-                const normalizedName = name.toLowerCase().replace(/\s+/g, '');
-                const cardInfo = allAlgoCards.find(ac => ac.name.toLowerCase().replace(/\s+/g, '') === normalizedName);
-                
-                return {
-                    id: cardInfo?._id || name,
-                    name: name,
-                    color: "#c9a84c",
-                    realId: cardInfo?._id
-                };
-            });
+        // Match them against the master allAlgoCards list to get full metadata
+        return allAlgoCards
+            .filter(card => {
+                const normalizedCardName = card.name.toLowerCase().replace(/\s+/g, '');
+                return wonScrollNames.includes(normalizedCardName);
+            })
+            .map(card => ({
+                id: card._id,
+                name: card.name,
+                color: "#c9a84c",
+                realId: card._id
+            }));
     }, [team, allAlgoCards]);
 
     // Filter selectedCards to only include available ones
+    // Only run this when both team and algo cards are fully loaded
     React.useEffect(() => {
-        setSelectedCards(prev => prev.filter(card => availableCards.some(ac => ac.name === card)));
-    }, [availableCards]);
+        if (!isTeamFetched || allAlgoCards.length === 0) return;
+        
+        setSelectedCards(prev => prev.filter(card => 
+            availableCards.some(ac => (ac.id === card.id || ac.name === card.name))
+        ));
+    }, [availableCards, isTeamFetched, allAlgoCards.length]);
 
 
     // Island Graph Data - Easy to adjust size and position
@@ -103,21 +127,60 @@ const MapPage = () => {
         { id: 3, name: "Port Royal", img: island3, top: "2%", left: "55%", size: "340px" }
     ];
 
+    const solvedCardIds = React.useMemo(() => {
+        if (!team?.round2?.problemsStatus || !r2Questions.length) return [];
+        const solvedProblemIdsStr = team.round2.problemsStatus
+            .filter(ps => ps.status === "SOLVED" || ps.status === "SUNK")
+            .map(ps => String(ps.problemId._id || ps.problemId));
+        
+        const solvedCards = [];
+        r2Questions.forEach(q => {
+            if (solvedProblemIdsStr.includes(String(q._id))) {
+                const matchingCard = selectedCards.find(c => q.allowedAlgorithms.includes(c.realId));
+                if (matchingCard) solvedCards.push(matchingCard.id);
+            }
+        });
+        return solvedCards;
+    }, [team, r2Questions, selectedCards]);
+
     // Persist State to LocalStorage
     React.useEffect(() => {
         localStorage.setItem('kriya_found_objects', JSON.stringify(foundObjects));
         localStorage.setItem('kriya_target_index', currentTargetIndex.toString());
         localStorage.setItem('kriya_selected_cards', JSON.stringify(selectedCards));
-        localStorage.setItem('kriya_cards_chosen', cardsChosen.toString());
-    }, [foundObjects, currentTargetIndex, selectedCards, cardsChosen]);
+
+        // Auto-fix if cards were cleared but state said they were chosen
+        // Also auto-fix if local storage thinks cards are chosen, but the database has no round2 questions assigned
+        const noBackendMapping = isTeamFetched && team && (!team.round2?.problemsStatus || team.round2.problemsStatus.length === 0);
+        if (cardsChosen && (selectedCards.length < 3 || noBackendMapping)) {
+            setCardsChosen(false);
+            localStorage.setItem('kriya_cards_chosen', "false");
+        } else {
+            localStorage.setItem('kriya_cards_chosen', cardsChosen.toString());
+        }
+
+        // Check for new solved problems to show success banner
+        if (team?.round2?.problemsStatus) {
+            const currentSolved = team.round2.problemsStatus.filter(ps => ps.status === "SOLVED").length;
+            if (currentSolved > lastSolvedCount) {
+                setShowSuccess(true);
+                setLastSolvedCount(currentSolved);
+                localStorage.setItem('kriya_solved_count', currentSolved.toString());
+                setTimeout(() => setShowSuccess(false), 5000);
+            }
+        }
+    }, [foundObjects, currentTargetIndex, selectedCards, cardsChosen, isTeamFetched, team, lastSolvedCount]);
 
     // Clear old sync data if it exists
     React.useEffect(() => {
         localStorage.removeItem('kriya_island_config');
-        fetchTeamData().then(teamData => {
-            if (teamData) fetchPlayerActionCards(teamData.kriyaID);
+        setIsLoading(true);
+        Promise.all([
+          fetchTeamData(),
+          fetchAlgos()
+        ]).finally(() => {
+          setTimeout(() => setIsLoading(false), 800);
         });
-        fetchAlgos();
     }, []);
 
     // Enrich selectedCards with realId once allAlgoCards are loaded
@@ -179,7 +242,11 @@ const MapPage = () => {
             const data = await res.json();
             if (res.ok) {
                 setTeam(data);
-                setSelectedCards(data.round1?.selectedScrolls?.map(s => s.name) || []);
+                setIsTeamFetched(true);
+                localStorage.setItem("team", JSON.stringify(data));
+                // Don't auto-set selectedCards from scrolls here, 
+                // as they might not be enriched with IDs yet.
+                // Let the localStorage or manual selection handle it.
                 return data;
             }
         } catch (err) {
@@ -208,16 +275,27 @@ const MapPage = () => {
             const cardIds = pickedCards.map(c => c.realId).filter(Boolean);
             
             // Map each selected algorithm to a question
-            // We want to ensure each selected card gets at least one question assigned to an island
-            const islandQuestions = cardIds.map(cid => {
+            let islandQuestions = cardIds.map(cid => {
                 return allQuestions.find(q => q.allowedAlgorithms.includes(cid));
             }).filter(Boolean);
+
+            // Backfill missing quests so the islands always work
+            const usedIds = new Set(islandQuestions.map(q => q._id));
+            if (islandQuestions.length < 3) {
+                for (const q of allQuestions) {
+                    if (!usedIds.has(q._id)) {
+                        islandQuestions.push(q);
+                        usedIds.add(q._id);
+                    }
+                    if (islandQuestions.length >= 3) break;
+                }
+            }
 
             setR2Questions(islandQuestions);
             console.log(`Loaded ${islandQuestions.length} quests for islands.`);
             
             if (islandQuestions.length < 3) {
-                console.warn("Could not find 3 distinct quests for the selected scrolls.");
+                console.warn("Could not find 3 distinct quests for the selected scrolls. Database might be empty.");
             }
         } catch (err) {
             console.error("Error fetching R2 questions", err);
@@ -305,11 +383,35 @@ const MapPage = () => {
     }
   };
 
-    const handleConfirmSelection = () => {
+    const handleConfirmSelection = async () => {
         if (selectedCards.length === 3) {
-            setCardsChosen(true);
-            setIsPopupOpen(false);
-            fetchR2Questions(selectedCards);
+            try {
+                const token = localStorage.getItem("token");
+                const res = await fetch(`${API_BASE}/api/teams/round2answers`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        selectedScrolls: selectedCards.map(c => c.realId)
+                    })
+                });
+                
+                if (res.ok) {
+                    setCardsChosen(true);
+                    setIsPopupOpen(false);
+                    fetchR2Questions(selectedCards);
+                    // Refresh team data to pull the problemsStatus
+                    fetchTeamData();
+                } else {
+                    const error = await res.json();
+                    alert(`Failed to confirm cards: ${error.msg}`);
+                }
+            } catch (err) {
+                console.error("Error confirming selection:", err);
+                alert("An error occurred confirming your cards.");
+            }
         }
     };
 
@@ -412,10 +514,29 @@ const MapPage = () => {
         }
     };
 
+  if (isLoading) {
+    return (
+      <div className="map-loading-screen" style={{ background: '#040a0e', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#c9a84c', gap: '20px' }}>
+          <div className="loading-spinner" style={{ width: '60px', height: '60px', border: '3px solid rgba(201, 168, 76, 0.2)', borderTop: '3px solid #c9a84c', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+          <h2 style={{ fontFamily: "'Pirata One', cursive", fontSize: '2rem', letterSpacing: '4px' }}>Charting Course...</h2>
+          <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Verifying scrolls and plundered goods</p>
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`map-page-container ${isTreasureHunting ? "treasure-hunting-active" : ""}`}
     >
+      {showSuccess && (
+          <div className="success-banner" style={{ position: 'fixed', top: '80px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(76, 175, 80, 0.9)', color: 'white', padding: '12px 30px', borderRadius: '50px', zIndex: 1000, boxShadow: '0 0 20px rgba(76, 175, 80, 0.5)', display: 'flex', alignItems: 'center', gap: '10px', animation: 'bannerPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}>
+              <span>🎉</span>
+              <strong>Quest Plundered!</strong>
+              <span>New points added to your bounty.</span>
+              <style>{`@keyframes bannerPop { 0% { transform: translateX(-50%) translateY(-50px); opacity: 0; } 100% { transform: translateX(-50%) translateY(0); opacity: 1; } }`}</style>
+          </div>
+      )}
       <div
         className="map-viewport"
         onMouseMove={handleMouseMove}
@@ -427,15 +548,24 @@ const MapPage = () => {
         <div className="islands-layer">
           {islands.map((island, idx) => {
             const hasQuestion = r2Questions[idx] != null;
+            const isIslandSolved = hasQuestion && team?.round2?.problemsStatus?.some(ps => 
+                String(ps.problemId._id || ps.problemId) === String(r2Questions[idx]._id) && 
+                (ps.status === "SOLVED" || ps.status === "SUNK")
+            );
+
             return (
               <div
                 key={island.id}
                 className={`island-node island-${island.id}`}
-                style={{ top: island.top, left: island.left, cursor: cardsChosen ? "pointer" : "not-allowed", opacity: cardsChosen ? 1 : 0.6 }}
+                style={{ top: island.top, left: island.left, cursor: (cardsChosen && !isIslandSolved) ? "pointer" : "not-allowed", opacity: (cardsChosen && !isIslandSolved) ? 1 : 0.6 }}
                 onClick={() => {
                   if (isTreasureHunting) return;
                   if (!cardsChosen) {
                       alert("Please choose 3 algorithm cards to chart your course first!");
+                      return;
+                  }
+                  if (isIslandSolved) {
+                      alert("This quest has already been completed!");
                       return;
                   }
                   if (hasQuestion && r2Questions[idx]._id) {
@@ -453,7 +583,8 @@ const MapPage = () => {
                 />
                 <div className="island-info">
                   <span className="island-name">{island.name}</span>
-                  {cardsChosen && hasQuestion && <span style={{fontSize: '0.7rem', color: '#c9a84c', display: 'block'}}>⚔️ Quest Ready</span>}
+                  {cardsChosen && hasQuestion && !isIslandSolved && <span style={{fontSize: '0.7rem', color: '#c9a84c', display: 'block'}}>⚔️ Quest Ready</span>}
+                  {isIslandSolved && <span style={{fontSize: '0.7rem', color: '#4caf50', display: 'block'}}>✅ Completed</span>}
                 </div>
               </div>
             );
@@ -496,20 +627,23 @@ const MapPage = () => {
       <nav className="card-navbar">
         <div className="navbar-left">
           <div className="selected-cards-container">
-            {[0, 1, 2].map((index) => (
+            {[0, 1, 2].map((index) => {
+              const card = selectedCards[index];
+              const isSolved = card && solvedCardIds.includes(card.id);
+              return (
               <div key={index} className="card-slot portrait-card">
-                {selectedCards[index] ? (
+                {card && !isSolved ? (
                   <div
                     className="card-content"
-                    style={{ backgroundColor: selectedCards[index].color }}
+                    style={{ backgroundColor: card.color }}
                   >
-                    <span>{selectedCards[index].name}</span>
+                    <span>{card.name}</span>
                   </div>
                 ) : (
-                  <div className="card-placeholder">?</div>
+                  <div className="card-placeholder">{isSolved ? "✨" : "?"}</div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
 
           {!cardsChosen && (
@@ -525,6 +659,10 @@ const MapPage = () => {
 
         <div className="navbar-right">
           <div className="nav-actions-group">
+            <div className="score-display" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: 'rgba(201, 168, 76, 0.2)', borderRadius: '4px', border: '1px solid #c9a84c', color: '#fff', fontWeight: 'bold' }}>
+               <span style={{ fontSize: '1.2rem' }}>🪙</span>
+               <span>Pts: {team?.totalScore || 0}</span>
+            </div>
             {foundObjects.length < decorations.length && (
               <div
                 className={`treasure-hunt-btn ${isTreasureHunting ? "active" : ""}`}
@@ -582,29 +720,36 @@ const MapPage = () => {
         <div className="popup-overlay">
           <div className="popup-content">
             <h2>Select 3 Cards</h2>
-            <div className="available-cards-grid">
-              {availableCards.map((card) => {
-                const isSelected = selectedCards.find((c) => c.id === card.id);
-                return (
-                  <div
-                    key={card.id}
-                    className={`available-card portrait-card ${isSelected ? "selected" : ""}`}
-                    onClick={() =>
-                      isSelected
-                        ? handleRemoveCard(card.id)
-                        : handleSelectCard(card)
-                    }
-                  >
-                    <div
-                      className="card-content"
-                      style={{ backgroundColor: card.color }}
-                    >
-                      <span>{card.name}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {availableCards.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#ccc' }}>
+                    <p>You haven't won any algorithm cards yet!</p>
+                    <p>Go back to the Anchorage and solve chests to earn scrolls.</p>
+                </div>
+            ) : (
+                <div className="available-cards-grid">
+                  {availableCards.map((card) => {
+                    const isSelected = selectedCards.find((c) => c.id === card.id);
+                    return (
+                      <div
+                        key={card.id}
+                        className={`available-card portrait-card ${isSelected ? "selected" : ""}`}
+                        onClick={() =>
+                          isSelected
+                            ? handleRemoveCard(card.id)
+                            : handleSelectCard(card)
+                        }
+                      >
+                        <div
+                          className="card-content"
+                          style={{ backgroundColor: card.color }}
+                        >
+                          <span>{card.name}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+            )}
             <div className="popup-actions">
               <button
                 className="confirm-btn"
