@@ -424,6 +424,7 @@ const CodeEditor = forwardRef(function CodeEditor(
   const LANG_MAP = {
     python: "python",
     c: "c",
+    cpp: "cpp",
     java: "java",
   };
 
@@ -928,6 +929,7 @@ export default function PirateArena({ problemId = 1, onBack }) {
             >
               <option value="python">🧭 Python 3</option>
               <option value="c">🌊 C</option>
+              <option value="cpp">🛡️ C++</option>
               <option value="java">🏴‍☠️ Java</option>
             </select>
           </div>
