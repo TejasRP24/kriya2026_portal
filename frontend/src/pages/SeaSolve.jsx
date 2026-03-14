@@ -19,6 +19,7 @@ export default function SeaSolve() {
   const [answer, setAnswer] = useState("");
   const [msg, setMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [isImgModalOpen, setIsImgModalOpen] = useState(false);
   const submitLockRef = useRef(false);
 
   useEffect(() => {
@@ -81,20 +82,55 @@ export default function SeaSolve() {
         <button className="back-btn" onClick={goBack}>← Back </button>
         <h2>Chest {Number.isFinite(seaId) ? seaId : "-"}</h2>
         <p className="team-id-label">Team: {kriyaID}</p>
-        {loading && <p>Loading...</p>}
+        
+        {loading && <p style={{ padding: "0 40px" }}>Loading...</p>}
+        
         {!loading && question && (
-          <>
-            <h3>{question.questionType}</h3>
-            <p style={{ whiteSpace: "pre-line" }}>{question.question}</p>
-            {question.imageUrl && <img src={question.imageUrl} alt={`Sea ${question.questionNo}`} className="question-image" />}
-            {Array.isArray(question.options) && question.options.length > 0 &&
-              <div className="options-list">{question.options.map((opt, i) => <div key={i} className="option-item">{opt}</div>)}</div>}
-            <input value={answer} onChange={e => setAnswer(e.target.value)} placeholder="ENTER OPTIONS (A/B/C/D) OR ANSWER " className="answer-input" />
-            <button onClick={submitAnswer} disabled={submitting} className="submit-btn">{submitting ? "Submitting..." : "Submit"}</button>
-          </>
+          <div className="solve-content-wrapper">
+            <div className="solve-scroll-content">
+              <h3>{question.questionType}</h3>
+              <p className="question-text">{question.question}</p>
+              
+              {question.imageUrl && (
+                <div className="image-preview-wrapper" onClick={() => setIsImgModalOpen(true)}>
+                  <img src={question.imageUrl} alt={`Sea ${question.questionNo}`} className="question-image" />
+                  <div className="image-hint">🔍 CLICK TO ENLARGE</div>
+                </div>
+              )}
+              
+              {Array.isArray(question.options) && question.options.length > 0 && (
+                <div className="options-list">
+                  {question.options.map((opt, i) => (
+                    <div key={i} className="option-item">{opt}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="answer-section">
+              <input 
+                value={answer} 
+                onChange={e => setAnswer(e.target.value)} 
+                placeholder="ENTER OPTIONS (A/B/C/D) OR ANSWER " 
+                className="answer-input" 
+              />
+              <button onClick={submitAnswer} disabled={submitting} className="submit-btn">
+                {submitting ? "Submitting..." : "Submit"}
+              </button>
+              {msg && <p className="msg">{msg}</p>}
+            </div>
+          </div>
         )}
-        {msg && <p className="msg">{msg}</p>}
       </div>
+
+      {isImgModalOpen && question?.imageUrl && (
+        <div className="image-modal-overlay" onClick={() => setIsImgModalOpen(false)}>
+          <div className="image-modal-content" onClick={e => e.stopPropagation()}>
+            <button className="close-modal" onClick={() => setIsImgModalOpen(false)}>×</button>
+            <img src={question.imageUrl} alt="Flowchart View" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

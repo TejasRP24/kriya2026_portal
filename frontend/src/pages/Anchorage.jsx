@@ -175,14 +175,16 @@ export default function Anchorage() {
         <div className="progress" ref={headerRef}>🕒 {formatTime(timeLeft)} | 🪙 {points} | {seasCleared} / 7</div>
       </div>
 
-      {chests.map(chest => (
-        <div key={chest.id} className={`chest-wrapper ${chest.opened ? "opened" : ""}`} ref={el => chestRefs.current[chest.id] = el}
-          style={{ left: `${chest.left}%`, top: `${chest.top}%`, cursor: chest.opened ? "default" : "pointer" }}
-          onClick={() => handleSolve(chest)}>
-          <img src={chest.opened ? "/opens.png" : "/locked.png"} alt="chest" className="chest" />
-          <div className="chest-name">{chest.name}</div>
-        </div>
-      ))}
+      <div className="chests-layer">
+        {chests.map(chest => (
+          <div key={chest.id} className={`chest-wrapper ${chest.opened ? "opened" : ""}`} ref={el => chestRefs.current[chest.id] = el}
+            style={{ left: `${chest.left}%`, top: `${chest.top}%`, cursor: chest.opened ? "default" : "pointer" }}
+            onClick={() => handleSolve(chest)}>
+            <img src={chest.opened ? "/opens.png" : "/locked.png"} alt="chest" className="chest" />
+            <div className="chest-name">{chest.name}</div>
+          </div>
+        ))}
+      </div>
 
       {showCard && (pendingCard || pendingActionCard) && (
         <div className="card-overlay" onClick={closeCardPopup}>

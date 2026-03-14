@@ -226,15 +226,29 @@
 }
 
 /* ================================================================
-   CHESTS — absolutely positioned over map
+   CHESTS — absolute positioning over map with scale
    ================================================================ */
+.chests-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  /* Aggressive scale to fit all corners of the map */
+  transform: scale(0.85); 
+  transform-origin: center center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .chest-wrapper {
   position: absolute;
-  transform: translate(-50%, calc(-50% + 60px));
+  transform: translate(-50%, -50%); /* Center strictly on the point */
   text-align: center;
   z-index: 10;
-  width: 160px;
+  width: 140px; 
   cursor: pointer;
+  pointer-events: auto;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
   animation: chest-appear 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -261,7 +275,7 @@
 }
 
 .chest {
-  width: 110px;
+  width: 90px; /* Smaller chest for zoom out */
   height: auto;
   display: block;
   margin: 0 auto;

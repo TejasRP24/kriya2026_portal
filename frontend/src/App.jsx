@@ -9,26 +9,9 @@ import Login from "./components/Login";
 import OtpPage from "./pages/OtpPage";
 import PirateArena from "./PirateArena";
 
-function TempNav() {
-  return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.8)", padding: "10px", display: "flex", gap: "15px", zIndex: 99999, overflowX: "auto", fontFamily: "sans-serif" }}>
-      <Link to="/codequest" style={{ color: "white" }}>Signup</Link>
-      <Link to="/codequest/login" style={{ color: "white" }}>Login</Link>
-      <Link to="/codequest/otp" style={{ color: "white" }}>OTP</Link>
-      <Link to="/codequest/shiplanding" style={{ color: "white" }}>ShipLanding</Link>
-      <Link to="/codequest/anchorage" style={{ color: "white" }}>Anchorage</Link>
-      <Link to="/codequest/team/test/sea/1" style={{ color: "white" }}>SeaSolve</Link>
-      <Link to="/codequest/map" style={{ color: "white" }}>MapPage</Link>
-      <Link to="/codequest/admin" style={{ color: "white" }}>Admin</Link>
-      <Link to="/codequest/arena" style={{ fontWeight: "bold", color: "gold" }}>Arena</Link>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
-      <TempNav />
       <Routes>
         <Route path="/" element={<Navigate to="/codequest" replace />} />
         <Route path="/codequest">
