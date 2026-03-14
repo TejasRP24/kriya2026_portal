@@ -6,7 +6,7 @@ import {
   useImperativeHandle,
   forwardRef,
 } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import MonacoEditor from "@monaco-editor/react";
 
 import { submitToJudge } from "./utils/judge0";
@@ -314,7 +314,7 @@ function ProblemPanel({ problem, onBack }) {
 
       {/* Title */}
       <h2 className="pa-problem-title">
-        #{problem.id}. {problem.title}
+        {problem.title}
       </h2>
 
       {/* Meta */}
@@ -606,6 +606,7 @@ let LOG_ID = 0;
 
 export default function PirateArena({ problemId = 1, onBack }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const stateProblem = location.state?.problem;
 
   // Adapt DB problem to Arena format
@@ -632,9 +633,27 @@ export default function PirateArena({ problemId = 1, onBack }) {
 
   const initialProblem =
     mappedProblem || PROBLEMS.find((p) => p.id === problemId) || PROBLEMS[0];
-  const [problem] = useState(initialProblem);
+  const [problem, setProblem] = useState(initialProblem);
   const [language, setLanguage] = useState("python");
   const [code, setCode] = useState("");
+
+  // Load code from localStorage for this specific problem
+  useEffect(() => {
+    if (problem?.id || problem?._id) {
+        const id = problem.id || problem._id;
+        const savedCode = localStorage.getItem(`code_${id}`);
+        if (savedCode) setCode(savedCode);
+        else setCode(""); // Clear for new problem
+    }
+  }, [problem]);
+
+  // Save code to localStorage on every change
+  useEffect(() => {
+    if (problem?.id || problem?._id) {
+        const id = problem.id || problem._id;
+        localStorage.setItem(`code_${id}`, code);
+    }
+  }, [code, problem]);
 
   const [maxLives, setMaxLives] = useState(3);
   const [lives, setLives] = useState(3);
@@ -821,9 +840,29 @@ export default function PirateArena({ problemId = 1, onBack }) {
         setBounty((b) => b + (score ?? problem.bountyReward));
         setSolved((prev) => new Set([...prev, problem.id]));
         setSpinning(true);
+        
+        // Update local team storage so MapPage doesn't have a stale fallback
+        const rawTeam = localStorage.getItem("team");
+        if (rawTeam) {
+            try {
+                const team = JSON.parse(rawTeam);
+                team.totalScore = (team.totalScore || 0) + (score ?? problem.bountyReward);
+                // Mark problem as solved locally too
+                if (!team.round2) team.round2 = { score: 0, problemsStatus: [] };
+                const pId = problem.id || problem._id;
+                const ps = team.round2.problemsStatus.find(p => String(p.problemId._id || p.problemId) === String(pId));
+                if (ps) ps.status = "SOLVED";
+                localStorage.setItem("team", JSON.stringify(team));
+            } catch (e) {
+                console.error("Local team update failed", e);
+            }
+        }
+
         setTimeout(() => setSpinning(false), 700);
+        setTimeout(() => navigate("/codequest/map"), 2500);
       } else {
         addLog("info", "Already solved — no extra doubloons this run.");
+        setTimeout(() => navigate("/codequest/map"), 1500);
       }
     } else {
       // WRONG_ANSWER or COMPILATION_ERROR — deduct a life
@@ -935,9 +974,9 @@ export default function PirateArena({ problemId = 1, onBack }) {
       "system",
       "⚓ Welcome to the Pirate DSA Arena! Brace yerself, sailor.",
     );
-    addLog("system", `Problem loaded: "${PROBLEMS[0].title}"`);
+    addLog("system", `Problem loaded: "${problem?.title || "Unknown Problem"}"`);
     addLog("info", "Tip: Ctrl+Enter → Submit  ·  Shift+Ctrl+Enter → Run");
-  }, []); // eslint-disable-line
+  }, [problem, addLog]); // eslint-disable-line
 
   /* ── Render ─────────────────────────────────────── */
   return (
